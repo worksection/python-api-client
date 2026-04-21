@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from worksection.models.model import Model
 from worksection.models.project_user import ProjectUser
@@ -23,6 +23,8 @@ class Project(Model):
     options: List = field(default_factory=list)
     users: List[ProjectUser] = field(default_factory=list)
     custom_fields: List[CustomValue] = field(default_factory=list)
+    user_from: Optional[ProjectUser] = None
+    user_to: Optional[ProjectUser] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Project':
@@ -41,4 +43,8 @@ class Project(Model):
         )
         obj.users = [ProjectUser.from_dict(u) for u in data.get('users', [])]
         obj.custom_fields = [CustomValue.from_dict(f) for f in data.get('custom_fields', [])]
+        if 'user_from' in data and data['user_from']:
+            obj.user_from = ProjectUser.from_dict(data['user_from'])
+        if 'user_to' in data and data['user_to']:
+            obj.user_to = ProjectUser.from_dict(data['user_to'])
         return obj
