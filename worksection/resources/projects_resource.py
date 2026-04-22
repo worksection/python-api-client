@@ -51,8 +51,8 @@ class ProjectsResource(Resource):
         """Optional params: group, type, access"""
         return [Tag.from_dict(i) for i in self._call_action('get_project_tags', params)]
 
-    def create_tag(self, group: str, title: str) -> Tag:
-        return Tag.from_dict(self._call_action_one('add_project_tags', {'group': group, 'title': title}))
+    def create_tags(self, group: str, *names: str) -> List[Tag]:
+        return [Tag.from_dict(i) for i in self._call_action('add_project_tags', {'group': group, 'title': ','.join(names)})]
 
     def update_tags(self, project_id: int, add_ids: List[int] = [], remove_ids: List[int] = []) -> None:
         self._call_action('update_project_tags', {

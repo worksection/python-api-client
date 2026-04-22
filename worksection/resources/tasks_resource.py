@@ -55,8 +55,8 @@ class TasksResource(Resource):
         """Optional params: group, type, access"""
         return [Tag.from_dict(i) for i in self._call_action('get_task_tags', params)]
 
-    def create_tag(self, group: str, title: str) -> Tag:
-        return Tag.from_dict(self._call_action_one('add_task_tags', {'group': group, 'title': title}))
+    def create_tags(self, group: str, *names: str) -> List[Tag]:
+        return [Tag.from_dict(i) for i in self._call_action('add_task_tags', {'group': group, 'title': ','.join(names)})]
 
     def update_tags(self, task_id: int, add_ids: List[int] = [], remove_ids: List[int] = []) -> None:
         self._call_action('update_task_tags', {
@@ -69,9 +69,9 @@ class TasksResource(Resource):
         """Optional params: type, access"""
         return [TagGroup.from_dict(i) for i in self._call_action('get_task_tag_groups', params)]
 
-    def create_tag_group(self, title: str, type: str, access: str) -> TagGroup:
-        """type: 'status' or 'label'. access: 'public' or 'private'"""
-        result = self._call_action('add_task_tag_groups', {'title': title, 'type': type, 'access': access})
+    def create_tag_group(self, title: str, access: str) -> TagGroup:
+        """access: 'public' or 'private'"""
+        result = self._call_action('add_task_tag_groups', {'title': title, 'type': 'label', 'access': access})
         return TagGroup.from_dict(result[0] if result else {})
 
     def custom_fields(self) -> List[CustomField]:

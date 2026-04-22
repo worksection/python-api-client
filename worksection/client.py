@@ -32,7 +32,7 @@ from worksection.resources.webhook_resource import WebhookResource
 _TOKEN_ACCESS = 1
 _TOKEN_API_KEY = 2
 
-_ADMIN_PATH = '/api/admin/v2.1'
+_ADMIN_PATH = '/api/admin/v2'
 _USER_PATH = '/api/oauth2'
 
 
@@ -159,32 +159,29 @@ class Client:
 
     # ── URL builders ─────────────────────────────────────────────────────────
 
-    def _admin_url(self, action: str) -> str:
+    def get_admin_token(self, action: str) -> str:
         if not self.has_api_key(): raise WorksectionException('API key not set')
         t = int(time.time())
         sig = hmac.new(self.get_api_key().encode(), f'{action}:{t}'.encode(), hashlib.sha256).hexdigest()
-        params = urllib.parse.urlencode({'action': action, 'hash': sig, 'time': t})
-        return f'{self.origin}{_ADMIN_PATH}?{params}'
+        return f'{t}_{sig}'
+
+    def _admin_url(self, action: str) -> str:
+        return f'{self.origin}{_ADMIN_PATH}?' + urllib.parse.urlencode({'action': action})
 
     def _user_url(self, action: str) -> str:
-        if not self.has_access_token(): raise WorksectionException('User token not set')
-        params = urllib.parse.urlencode({'action': action, 'access_token': self.get_access_token()})
-        return f'{self.origin}{_USER_PATH}?{params}'
+        return f'{self.origin}{_USER_PATH}?' + urllib.parse.urlencode({'action': action})
 
     # ── core send ────────────────────────────────────────────────────────────
 
-    def _send_json(self, url: str, params: Dict[str, Any] = {}, retry: int = 0) -> Dict[str, Any]:
+    def _send_json(self, url: str, params: Dict[str, Any] = {}, extra_headers: Dict[str, str] = {}, retry: int = 0) -> Dict[str, Any]:
         body = json.dumps(params, ensure_ascii=False).encode('utf-8') if params else None
-        resp = self._http.send(
-            url,
-            method='POST' if body else 'GET',
-            body=body,
-            headers={
-                'Content-Type': 'application/json; charset=utf-8',
-                'Accept': 'application/json',
-                'Sdk-Client': f'python-sdk:{self.VERSION}',
-            },
-        )
+        headers = {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json',
+            'Sdk-Client': f'python-sdk:{self.VERSION}',
+            **extra_headers,
+        }
+        resp = self._http.send(url, method='POST', body=body, headers=headers)
 
         if resp.status == 401:
             try:
@@ -195,7 +192,8 @@ class Client:
             if self.has_refresh_token() and 'token is expired' in message and retry == 0:
                 token = self.get_oauth().fetch_access_token_by_refresh_token(self.get_refresh_token())
                 self.set_access_token(token)
-                return self._send_json(url, params, retry + 1)
+                updated = {**extra_headers, 'Authorization': f'Bearer {self.get_access_token()}'}
+                return self._send_json(url, params, updated, retry + 1)
             raise UnauthorizedException(message)
 
         try:
@@ -216,42 +214,51 @@ class Client:
     # ── admin / user action helpers ──────────────────────────────────────────
 
     def call_admin_action(self, action: str, params: Dict[str, Any] = {}) -> List[Dict[str, Any]]:
-        result = self._process(self._send_json(self._admin_url(action), params), action)
+        result = self._process(
+            self._send_json(self._admin_url(action), params, {'Authorization': f'Admin {self.get_admin_token(action)}'}),
+            action,
+        )
         return result if isinstance(result, list) else [result]
 
     def call_admin_action_one(self, action: str, params: Dict[str, Any] = {}) -> Dict[str, Any]:
-        result = self._process(self._send_json(self._admin_url(action), params), action)
+        result = self._process(
+            self._send_json(self._admin_url(action), params, {'Authorization': f'Admin {self.get_admin_token(action)}'}),
+            action,
+        )
         return result[0] if isinstance(result, list) else result
 
     def call_user_action(self, action: str, params: Dict[str, Any] = {}) -> List[Dict[str, Any]]:
-        result = self._process(self._send_json(self._user_url(action), params), action)
+        result = self._process(
+            self._send_json(self._user_url(action), params, {'Authorization': f'Bearer {self.get_access_token()}'}),
+            action,
+        )
         return result if isinstance(result, list) else [result]
 
     def call_user_action_one(self, action: str, params: Dict[str, Any] = {}) -> Dict[str, Any]:
-        result = self._process(self._send_json(self._user_url(action), params), action)
+        result = self._process(
+            self._send_json(self._user_url(action), params, {'Authorization': f'Bearer {self.get_access_token()}'}),
+            action,
+        )
         return result[0] if isinstance(result, list) else result
 
     # ── uploads ──────────────────────────────────────────────────────────────
 
     def call_admin_upload(self, action: str, files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return self._send_upload(self._admin_url(action), files, action)
+        return self._send_upload(self._admin_url(action), files, action, {'Authorization': f'Admin {self.get_admin_token(action)}'})
 
     def call_user_upload(self, action: str, files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return self._send_upload(self._user_url(action), files, action)
+        return self._send_upload(self._user_url(action), files, action, {'Authorization': f'Bearer {self.get_access_token()}'})
 
-    def _send_upload(self, url: str, files: List[Dict[str, Any]], action: str) -> List[Dict[str, Any]]:
+    def _send_upload(self, url: str, files: List[Dict[str, Any]], action: str, extra_headers: Dict[str, str] = {}) -> List[Dict[str, Any]]:
         boundary = uuid.uuid4().hex
         body = self._build_multipart(files, boundary)
-        resp = self._http.send(
-            url,
-            method='POST',
-            body=body,
-            headers={
-                'Content-Type': f'multipart/form-data; boundary={boundary}',
-                'Accept': 'application/json',
-                'Sdk-Client': f'python-sdk:{self.VERSION}',
-            },
-        )
+        headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Accept': 'application/json',
+            'Sdk-Client': f'python-sdk:{self.VERSION}',
+            **extra_headers,
+        }
+        resp = self._http.send(url, method='POST', body=body, headers=headers)
         try:
             data = resp.json()
         except Exception:
@@ -285,22 +292,20 @@ class Client:
     # ── downloads ────────────────────────────────────────────────────────────
 
     def call_admin_download(self, action: str, params: Dict[str, Any] = {}, sink=None) -> DownloadedFile:
-        return self._download(self._admin_url(action), params, sink)
+        return self._download(self._admin_url(action), params, sink, {'Authorization': f'Admin {self.get_admin_token(action)}'})
 
     def call_user_download(self, action: str, params: Dict[str, Any] = {}, sink=None) -> DownloadedFile:
-        return self._download(self._user_url(action), params, sink)
+        return self._download(self._user_url(action), params, sink, {'Authorization': f'Bearer {self.get_access_token()}'})
 
-    def _download(self, url: str, params: Dict[str, Any] = {}, sink=None) -> DownloadedFile:
+    def _download(self, url: str, params: Dict[str, Any] = {}, sink=None, extra_headers: Dict[str, str] = {}) -> DownloadedFile:
         body = json.dumps(params, ensure_ascii=False).encode('utf-8') if params else None
-        raw = self._http.stream(
-            url,
-            body=body,
-            headers={
-                'Content-Type': 'application/json; charset=utf-8',
-                'Accept': '*/*',
-                'Sdk-Client': f'python-sdk:{self.VERSION}',
-            },
-        )
+        headers = {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': '*/*',
+            'Sdk-Client': f'python-sdk:{self.VERSION}',
+            **extra_headers,
+        }
+        raw = self._http.stream(url, body=body, headers=headers)
 
         content_type = (raw.headers.get('Content-Type') or raw.headers.get('content-type') or '')
         if content_type.startswith('application/json'):

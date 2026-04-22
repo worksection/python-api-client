@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "worksection-api-client"
-version = "2.1.1"
+version = "2.1.2"
 description = "API client library for Worksection"
 license = {text = "MIT"}
 requires-python = ">=3.8"
