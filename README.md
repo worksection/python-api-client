@@ -131,6 +131,7 @@ task = client.tasks.create(project_id, 'Task title', {
     'email_user_to': 'assignee@example.com',
     'dateend':       '2025-06-30',
     'priority':      'high',
+    'files':         uploaded_files,  # check Files section for upload method
 })
 
 # Create a subtask
@@ -299,15 +300,20 @@ events = client.events.list('30d', project_id)
 ### Files
 
 ```python
-# List files on a task or project
+# List files on a task
 files = client.files.list({'id_task': task_id})
+
+# List files in a project
 files = client.files.list({'id_project': project_id})
 
-# Upload files
-uploaded = client.files.upload(['/path/to/file.pdf'])
+# Upload files (array of absolute local paths)
+uploaded = client.files.upload([
+    '/home/user/files/photo.jpg',
+    '/home/user/files/document.txt',
+])
 
-# Download a file (to path or file object)
-downloaded = client.files.download(file_id, '/path/to/save.pdf')
+# specify ID of the file and a destination local path
+downloaded = client.files.download(file_id, '/home/user/downloads/tmp_file_1')
 ```
 
 ### Webhooks
